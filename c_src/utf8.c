@@ -62,6 +62,16 @@ int_to_hex(int val, char* p)
     return 1;
 }
 
+
+/*
+ * ret:
+ *   1 if ascii
+ *   2 if the 2rd range
+ *   3 if the 3rd range
+ *   4 if the 4rd range
+ *   -1 error
+ */
+
 int
 utf8_len(int c)
 {
@@ -94,18 +104,29 @@ utf8_esc_len(int c)
     }
 }
 
+/*
+ * ret:
+ *  1 if 0yyyyyyy
+ *  2 if 110xxxxy 10yyyyyy
+ *  3 if 1110xxxx 10xyyyyy 10yyyyyy
+ *  4 if 11110xxx 10xxyyyy 10yyyyyy 10yyyyyy
+ */
 int
 utf8_validate(unsigned char* data, size_t size)
 {
     int ulen = -1;
     int ui;
 
+    // 0yyyyyyy
     if((data[0] & 0x80) == 0x00) {
         ulen = 1;
+    // 110xxxxy 10yyyyyy
     } if((data[0] & 0xE0) == 0xC0) {
         ulen = 2;
+    // 1110xxxx 10xyyyyy 10yyyyyy
     } else if((data[0] & 0xF0) == 0xE0) {
         ulen = 3;
+    // 11110xxx 10xxyyyy 10yyyyyy 10yyyyyy
     } else if((data[0] & 0xF8) == 0xF0) {
         ulen = 4;
     }
@@ -130,19 +151,22 @@ utf8_validate(unsigned char* data, size_t size)
     //  4: 11110xxx 10xxyyyy 10yyyyyy 10yyyyyy
 
     // ulen == 1 passes by definition
-    if(ulen == 2) {
+    if(ulen == 2) { // 00011110
         if((data[0] & 0x1E) == 0)
             return -1;
-    } else if(ulen == 3) {
+    } else if(ulen == 3) { // 0000 1111; 0010 0000
         if((data[0] & 0x0F) + (data[1] & 0x20) == 0)
             return -1;
-    } else if(ulen == 4) {
+    } else if(ulen == 4) { //000 00111; 0011 0000
         if((data[0] & 0x07) + (data[1] & 0x30) == 0)
             return -1;
     }
 
     // Lastly we need to check some miscellaneous ranges for
     // some of the larger code point values.
+
+
+    // most chinese are in the range
     if(ulen >= 3) {
         ui = utf8_to_unicode(data, ulen);
         if(ui < 0) {
@@ -157,6 +181,13 @@ utf8_validate(unsigned char* data, size_t size)
     return ulen;
 }
 
+/*
+ * ret:(UTF-8 ==> Unicode)
+ *  0yyyyyyy(1 bytes) ==> 0yyy yyyy(1 bytes)
+ *  110xxxxy 10yyyyyy(2 bytes) ==> 0xxx xyyy yyyy(2 bytes)
+ *  1110xxxx 10xyyyyy 10yyyyyy(3 bytes) ==> xxxx xyyy yyyy yyyy(2 bytes)
+ *  11110xxx 10xxyyyy 10yyyyyy 10yyyyyy(4 bytes) ==> 0000x xxxx yyyy yyyy yyyy yyyy(3 bytes)
+ */
 int
 utf8_to_unicode(unsigned char* buf, size_t size)
 {

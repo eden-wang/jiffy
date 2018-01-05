@@ -57,10 +57,10 @@ typedef struct {
     int             copy_strings;
     ERL_NIF_TERM    null_term;
 
-    char*           p;
-    unsigned char*  u;
-    int             i;
-    int             len;
+    char*           p; // points to the begining of json string
+    unsigned char*  u; // the same as p, except that it points to 'unsigned char'
+    int             i; // the character to parse
+    int             len; // size/length of the json string
 
     char*           st_data;
     int             st_size;
@@ -192,14 +192,14 @@ dec_pop(Decoder* d, char val)
 int
 dec_string(Decoder* d, ERL_NIF_TERM* value)
 {
-    int has_escape = 0;
-    int num_escapes = 0;
-    int st;
+    int has_escape = 0; // has escape characters
+    int num_escapes = 0; // number of escape characters: "\uxxxx" stands for one unicode character, so num_escapes = 5;
+    int st; // point to the beginning of parsing object(key or value)
     int ulen;
-    int ui;
-    int hi;
-    int lo;
-    char* chrbuf;
+    int ui; // loop variable
+    int hi; // convert hex(2 bytes, 4 chars "5667") to int: int hi = 5667;
+    int lo; // when "\uxxxx\uyyyy", where xxxx is [0xD800, 0xDC00), then lo = int(yyyy);
+    char* chrbuf; // if has_escape is 1, store converted string
     int chrpos;
 
     if(d->p[d->i] != '\"') {
@@ -210,8 +210,8 @@ dec_string(Decoder* d, ERL_NIF_TERM* value)
     st = d->i;
 
     while(d->i < d->len) {
-        if(d->u[d->i] < 0x20) {
-            return 0;
+        if(d->u[d->i] < 0x20) { // whatever's value is less than 0x20 is controlable characters
+            return 0; // failed
         } else if(d->p[d->i] == '\"') {
             d->i++;
             goto parse;
@@ -233,7 +233,7 @@ dec_string(Decoder* d, ERL_NIF_TERM* value)
                 case 't':
                     d->i++;
                     break;
-                case 'u':
+                case 'u': // unicode character
                     hi = 0;
                     lo = 0;
                     d->i++;
@@ -245,6 +245,7 @@ dec_string(Decoder* d, ERL_NIF_TERM* value)
                         return 0;
                     }
                     d->i += 4;
+                    // UTF-16 if hi is [0xD800, 0xDC00)
                     if(hi >= 0xD800 && hi < 0xDC00) {
                         if(d->i + 6 >= d->len) {
                             return 0;
@@ -276,9 +277,10 @@ dec_string(Decoder* d, ERL_NIF_TERM* value)
                 default:
                     return 0;
             }
-        } else if(d->u[d->i] < 0x80) {
+        } else if(d->u[d->i] < 0x80) { // ascii
             d->i++;
         } else {
+            // check whether string is utf8 encoding
             ulen = utf8_validate(&(d->u[d->i]), d->len - d->i);
             if(ulen < 0) {
                 return 0;
@@ -293,9 +295,11 @@ dec_string(Decoder* d, ERL_NIF_TERM* value)
     return 0;
 
 parse:
+    // has_escape is 0 and d->copy_strings is 0
     if(!has_escape && !d->copy_strings) {
         *value = enif_make_sub_binary(d->env, d->arg, st, (d->i - st - 1));
         return 1;
+    // has_escape is 0
     } else if(!has_escape) {
         ulen = d->i - 1 - st;
         chrbuf = (char*) enif_make_new_binary(d->env, ulen, value),
@@ -303,6 +307,9 @@ parse:
         return 1;
     }
 
+    // has_escape is non zero and d->copy_strings is 0/1
+
+    // convert unicode '\u4F60\u597D' to uft-8
     hi = 0;
     lo = 0;
 
